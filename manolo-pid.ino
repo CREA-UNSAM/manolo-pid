@@ -56,7 +56,7 @@ int left_motor_speed = 0.0;
 int right_motor_speed = 0.0;
 
 const unsigned int blinkDelay = 490;
-const unsigned int runDelay = 0;
+const unsigned int runDelay = 10;
 bool state = false;
 bool blink = true;
 bool button_state;
@@ -64,26 +64,10 @@ bool button_state;
 unsigned long blinkTimer;
 unsigned long runTimer;
 
-int memory = 0;
-
 void setup()
 {
   // Initialize serial communication
   Serial.begin(9600);
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
   Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
 
   // Initialize the LED pin as an output
@@ -161,7 +145,7 @@ void run(unsigned long currentTime)
     Serial.print(maxRightDetections);
 
     // Calculate the weighted sum of sensor values
-    Input = (maxLeftDetections * 10) - (maxRightDetections * 10);
+    Input = (maxLeftDetections) - (maxRightDetections);
 
     // Compute PID output
     float position = Input;                                          // Lee la posición de la línea
@@ -293,7 +277,6 @@ void stop(unsigned int currentTime)
     digitalWrite(PIN_LED, blink);
     blink = !blink;
     blinkTimer = currentTime;
-    memory = 0;
   }
 }
 
@@ -316,5 +299,5 @@ void loop()
   }
 
   button_state = digitalRead(PIN_BUTTON);
-  delay(1);
+  // delay(1);
 }
