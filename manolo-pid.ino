@@ -1,9 +1,9 @@
 // DEFINES
 #define LOGIC 1
 #define MOTORS_MAX_PWM_VALUE 255
-#define MOTORS_MIN_PWM_VALUE -40
+#define MOTORS_MIN_PWM_VALUE -80
 // #define MAXOUTPUT 255
-#define SPEED_BASE 80
+#define SPEED_BASE 100
 
 // PIN DEFINITIONS
 const int PIN_LED = 8;    // D8 | Digital 8 | GPIO 14
@@ -44,7 +44,7 @@ int motorspeedR;
 int motorspeedL;
 
 double Setpoint, Input, Output;
-double KP = 2.8, KI = 0, KD = 0;
+double KP = 0.45, KI = 0.045, KD = 0.3;
 
 float setpoint = 0.0; // Línea central
 float error = 0.0;
@@ -139,7 +139,7 @@ void run(unsigned long currentTime)
 
     sensorValues[CANT_ALL_SENSORS - 1] = !digitalRead(PINS_DIGITAL_SENSORS[1]);
 
-    int weights[] = {5, 3, 2, 1, 1, 2, 3, 5};
+    int weights[] = {24, 16, 9, 4, 4, 9, 16, 24};
 
     int maxLeftDetections = 0;
     for (int i = 0; i < CANT_ALL_SENSORS / 2; i++)
@@ -174,11 +174,7 @@ void run(unsigned long currentTime)
     Output = correction;
 
     motorspeedL = constrain(SPEED_BASE + correction, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE);
-    motorspeedR = constrain((SPEED_BASE - correction) - 20, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 20);
-
-
-    motorspeedL = SPEED_BASE;
-    motorspeedR = 
+    motorspeedR = constrain((SPEED_BASE - correction) - 18, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 18);
 
     // Motor izquierdo
     if (motorspeedL > 0)
