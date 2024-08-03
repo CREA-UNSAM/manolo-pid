@@ -1,7 +1,7 @@
 // DEFINES
 #define LOGIC 1
 #define MOTORS_MAX_PWM_VALUE 255
-#define MOTORS_MIN_PWM_VALUE -40
+#define MOTORS_MIN_PWM_VALUE 0
 // #define MAXOUTPUT 255
 #define SPEED_BASE 80
 
@@ -44,7 +44,7 @@ int motorspeedR;
 int motorspeedL;
 
 double Setpoint, Input, Output;
-double KP = 2.8, KI = 0, KD = 0;
+double KP = 12, KI = 0, KD = 0;
 
 float setpoint = 0.0; // Línea central
 float error = 0.0;
@@ -56,7 +56,7 @@ int left_motor_speed = 0.0;
 int right_motor_speed = 0.0;
 
 const unsigned int blinkDelay = 490;
-const unsigned int runDelay = 0;
+const unsigned int runDelay = 10;
 bool state = false;
 bool blink = true;
 bool button_state;
@@ -64,26 +64,10 @@ bool button_state;
 unsigned long blinkTimer;
 unsigned long runTimer;
 
-int memory = 0;
-
 void setup()
 {
   // Initialize serial communication
   Serial.begin(9600);
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
   Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
 
   // Initialize the LED pin as an output
@@ -139,7 +123,7 @@ void run(unsigned long currentTime)
 
     sensorValues[CANT_ALL_SENSORS - 1] = !digitalRead(PINS_DIGITAL_SENSORS[1]);
 
-    int weights[] = {5, 3, 2, 1, 1, 2, 3, 5};
+    int weights[] = {10, 7, 4, 1, 1, 4, 7, 10};
 
     int maxLeftDetections = 0;
     for (int i = 0; i < CANT_ALL_SENSORS / 2; i++)
@@ -161,7 +145,7 @@ void run(unsigned long currentTime)
     Serial.print(maxRightDetections);
 
     // Calculate the weighted sum of sensor values
-    Input = (maxLeftDetections * 10) - (maxRightDetections * 10);
+    Input = (maxLeftDetections) - (maxRightDetections);
 
     // Compute PID output
     float position = Input;                                          // Lee la posición de la línea
@@ -174,11 +158,11 @@ void run(unsigned long currentTime)
     Output = correction;
 
     motorspeedL = constrain(SPEED_BASE + correction, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE);
-    motorspeedR = constrain((SPEED_BASE - correction) - 20, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 20);
+    motorspeedR = constrain((SPEED_BASE - correction) - 18, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 18);
 
 
-    motorspeedL = SPEED_BASE;
-    motorspeedR = 
+    // motorspeedL = SPEED_BASE - 18;
+    // motorspeedR = SPEED_BASE;
 
     // Motor izquierdo
     if (motorspeedL > 0)
@@ -297,7 +281,6 @@ void stop(unsigned int currentTime)
     digitalWrite(PIN_LED, blink);
     blink = !blink;
     blinkTimer = currentTime;
-    memory = 0;
   }
 }
 
@@ -320,5 +303,5 @@ void loop()
   }
 
   button_state = digitalRead(PIN_BUTTON);
-  delay(1);
+  // delay(1);
 }
