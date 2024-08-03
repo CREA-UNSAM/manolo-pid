@@ -1,11 +1,9 @@
-#include <PID_v1.h>
-
 // DEFINES
 #define LOGIC 1
-#define MOTORS_MAX_PWM_VALUE 200
-#define MOTORS_MIN_PWM_VALUE 0
-#define MAXOUTPUT 200
-#define SPEED_BASE 255
+#define MOTORS_MAX_PWM_VALUE 255
+#define MOTORS_MIN_PWM_VALUE -40
+// #define MAXOUTPUT 255
+#define SPEED_BASE 80
 
 
 // PIN DEFINITIONS
@@ -47,9 +45,16 @@ int motorspeedR;
 int motorspeedL;
 
 double Setpoint, Input, Output;
-double Kp = 0.4, Ki = 0, Kd = 0;
+double KP = 2.8, KI = 0, KD = 0;
 
-PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+float setpoint = 0.0; // Línea central
+float error = 0.0;
+float previous_error = 0.0;
+float integral = 0.0;
+float derivative = 0.0;
+float correction = 0.0;
+int left_motor_speed = 0.0;
+int right_motor_speed = 0.0;
 
 void setup() {
   // Initialize serial communication
@@ -97,14 +102,59 @@ void setup() {
   pinMode(PIN_MOTOR_R_1, OUTPUT);
   pinMode(PIN_MOTOR_R_2, OUTPUT);
 
-  // Configure the PID
-  Setpoint = 0; // Adjust the setpoint as needed
-  myPID.SetMode(AUTOMATIC);
-  myPID.SetOutputLimits(-MAXOUTPUT, MAXOUTPUT);
+}
 
+
+
+void run(unsigned long currentTime)
+{
+  if((currentTime - runTimer) >= runDelay)
+  {
+    readSensorData();
+  
+    handleMotorSpeed();
+
+    printSerialData();
+
+    runTimer = currentTime;
+    digitalWrite(PIN_LED, HIGH);
+  }
+}
+
+void stop(unsigned int currentTime)
+{
+  if((currentTime - blinkTimer) >= blinkDelay)
+  {
+    analogWrite(PIN_MOTOR_L_PWM, 0);
+    analogWrite(PIN_MOTOR_R_PWM, 0);
+    digitalWrite(PIN_LED, blink);
+    blink = !blink;
+    blinkTimer = currentTime;
+    memory = 0;
+  }
 }
 
 void loop() {
+  unsigned long currentTime = millis();
+  if(state)
+  {
+    run(currentTime);
+  }
+  else
+  {
+    stop(currentTime);
+  }
+
+  if(button_state && !digitalRead(PIN_BUTTON))
+  {
+    state = !state;
+    Serial.println(state ? "RUN" : "STOP");
+  }
+
+  button_state = digitalRead(PIN_BUTTON);
+  delay(1);
+}
+void run() {
 
 
   for (int i = 0; i < CANT_ANALOG_SENSORS; i++) {
@@ -126,7 +176,7 @@ void loop() {
 
   sensorValues[CANT_ALL_SENSORS - 1] = !digitalRead(PINS_DIGITAL_SENSORS[1]);
 
-  int weights[] = {255, 180, 130, 80, 80, 130, 180, 255};
+  int weights[] = {5, 3, 2, 1, 1, 2, 3, 5};
   
   int maxLeftDetections = 0;
   for (int i = 0; i < CANT_ALL_SENSORS / 2; i++) {
@@ -145,23 +195,51 @@ void loop() {
 
 
   // Calculate the weighted sum of sensor values
-  Input = (maxLeftDetections) - (maxRightDetections);
+  Input = (maxLeftDetections * 10) - (maxRightDetections * 10);
 
   // Compute PID output
-  myPID.Compute();
+  float position = Input; // Lee la posición de la línea
+  error = setpoint - position; // Calcula el error
+  integral += error; // Acumula el error para el término integral
+  derivative = error - previous_error; // Calcula el cambio en el error
+  correction = (KP * error) + (KI * integral) + (KD * derivative); // Calcula la corrección
+  previous_error = error; // Actualiza el error previo
 
-  motorspeedL = constrain(SPEED_BASE + Output, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE);
-  motorspeedR = constrain((SPEED_BASE - Output)-20, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 20);
+  Output = correction;
+
+
+  motorspeedL = constrain(SPEED_BASE + correction, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE);
+  motorspeedR = constrain((SPEED_BASE - correction)- 20, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE-20);
 
   // Motor izquierdo
-  digitalWrite(PIN_MOTOR_L_1, HIGH);
-  digitalWrite(PIN_MOTOR_L_2, LOW);
-  analogWrite(PIN_MOTOR_L_PWM, motorspeedL);
+  if (motorspeedL > 0) {
+    digitalWrite(PIN_MOTOR_L_1, HIGH);
+    digitalWrite(PIN_MOTOR_L_2, LOW);
+    analogWrite(PIN_MOTOR_L_PWM, motorspeedL);
+  } else if (motorspeedL < 0) {
+    digitalWrite(PIN_MOTOR_L_1, LOW);
+    digitalWrite(PIN_MOTOR_L_2, HIGH);
+    analogWrite(PIN_MOTOR_L_PWM, -motorspeedL);//multiplica por -1 porque el valor es negativo
+  } else {
+    digitalWrite(PIN_MOTOR_L_1, LOW);
+    digitalWrite(PIN_MOTOR_L_2, LOW);
+    analogWrite(PIN_MOTOR_L_PWM, 0);
+  }
 
   // Motor derecho
-  digitalWrite(PIN_MOTOR_R_1, HIGH);
-  digitalWrite(PIN_MOTOR_R_2, LOW);
-  analogWrite(PIN_MOTOR_R_PWM, motorspeedR);
+  if (motorspeedR > 0) {
+    digitalWrite(PIN_MOTOR_R_1, HIGH);
+    digitalWrite(PIN_MOTOR_R_2, LOW);
+    analogWrite(PIN_MOTOR_R_PWM, motorspeedR);
+  } else if (motorspeedR < 0) {
+    digitalWrite(PIN_MOTOR_R_1, LOW);
+    digitalWrite(PIN_MOTOR_R_2, HIGH);
+    analogWrite(PIN_MOTOR_R_PWM, -motorspeedR); 
+  } else {
+    digitalWrite(PIN_MOTOR_R_1, LOW);
+    digitalWrite(PIN_MOTOR_R_2, LOW);
+    analogWrite(PIN_MOTOR_R_PWM, 0);
+  }
 
   Serial.print(" | ");
 
@@ -186,11 +264,11 @@ void loop() {
   Serial.print(" | Motor Speed L: ");
   Serial.println(motorspeedR);
   Serial.print(" | Kp: ");
-  Serial.print(Kp,5);
+  Serial.print(KP,5);
   Serial.print(" | Ki: ");
-  Serial.print(Ki,5);
+  Serial.print(KI,5);
   Serial.print(" | Kd: ");
-  Serial.print(Kd,5);
+  Serial.print(KD,5);
   Serial.print(" | ");
 
     // Check for serial input
@@ -200,20 +278,19 @@ void loop() {
 
     // Parse the input and update PID constants
     if (input.startsWith("Kp")) {
-      Kp = input.substring(3).toFloat();
-      myPID.SetTunings(Kp, Ki, Kd);
+      KP = input.substring(3).toFloat();
+      
       Serial.print("Kp updated to: ");
-      Serial.println(Kp);
+      Serial.println(KP);
     } else if (input.startsWith("Ki")) {
-      Ki = input.substring(3).toFloat();
-      myPID.SetTunings(Kp, Ki, Kd);
+      KI = input.substring(3).toFloat();
+     
       Serial.print("Ki updated to: ");
-      Serial.println(Ki);
+      Serial.println(KI);
     } else if (input.startsWith("Kd")) {
-      Kd = input.substring(3).toFloat();
-      myPID.SetTunings(Kp, Ki, Kd);
+      KD = input.substring(3).toFloat();
       Serial.print("Kd updated to: ");
-      Serial.println(Kd);
+      Serial.println(KD);
     }
   }
 
