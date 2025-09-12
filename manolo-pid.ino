@@ -1,303 +1,284 @@
-// DEFINES
-#define LOGIC 1
-#define MOTORS_MAX_PWM_VALUE 255
-#define MOTORS_MIN_PWM_VALUE -80
-// #define MAXOUTPUT 255
-#define SPEED_BASE 100
+// ------------------------- CONFIGURACIÓN ---------------------------
+// Lógica del sensor (1 = línea negra, 0 = línea blanca)
+#define LINE_LOGIC 0
 
-// PIN DEFINITIONS
-const int PIN_LED = 8;    // D8 | Digital 8 | GPIO 14
-const int PIN_BUTTON = 9; // D9 | Digital 9 | GPIO 15
+// Debug para testear los sensores y valores de los motores
+#define DEBUG 0
 
-// MOTOR RIGHT
-const int PIN_MOTOR_R_PWM = 5; // D5 | Digital 5 | GPIO 11
-const int PIN_MOTOR_R_1 = 7;   // D6 | Digital 6 | GPIO 12
-const int PIN_MOTOR_R_2 = 6;   // D7 | Digital 7 | GPIO 13
+// Límites de PWM para los motores
+#define MOTOR_MAX_PWM 255
+#define MOTOR_MIN_PWM -255
+#define MOTOR_RIGHT_OFFSET 0  // Compensación para motor derecho
 
-// MOTOR LEFT
-const int PIN_MOTOR_L_PWM = 3; // D3 | Digital 3 | GPIO 5
-const int PIN_MOTOR_L_1 = 4;   // D2 | Digital 2 | GPIO 4
-const int PIN_MOTOR_L_2 = 2;   // D4 | Digital 4 | GPIO 6
+// Velocidad base y ajustes
+#define BASE_SPEED 255
+#define RUN_INTERVAL 20     // ms
+#define BLINK_INTERVAL 490  // ms
 
-// SENSOR PINS
-const int PIN_SENSOR_0 = 11;
-const int PIN_SENSOR_1 = A5;
-const int PIN_SENSOR_2 = A4;
-const int PIN_SENSOR_3 = A3;
-const int PIN_SENSOR_4 = A2;
-const int PIN_SENSOR_5 = A1;
-const int PIN_SENSOR_6 = A0;
-const int PIN_SENSOR_7 = 12;
+// Pines de hardware
+enum Pins {
+  // Motores
+  MOTOR_L_PWM = 3,  // D3 | Digital 3 | GPIO 5
+  MOTOR_L_IN1 = 4,  // D4 | Digital 4 | GPIO 6
+  MOTOR_L_IN2 = 2,  // D2 | Digital 2 | GPIO 4
+  MOTOR_R_PWM = 5,  // D5 | Digital 5 | GPIO 11
+  MOTOR_R_IN1 = 6,  // D7 | Digital 7 | GPIO 13
+  MOTOR_R_IN2 = 7,  // D6 | Digital 6 | GPIO 12
 
-const int CANT_ANALOG_SENSORS = 6;
-const int CANT_DIGITAL_SENSORS = 2;
+  // Sensores
+  SENSOR_D0 = 11,
+  SENSOR_A1 = A5,
+  SENSOR_A2 = A4,
+  SENSOR_A3 = A3,
+  SENSOR_A4 = A2,
+  SENSOR_A5 = A1,
+  SENSOR_A6 = A0,
+  SENSOR_D7 = 12,
 
-const int CANT_ALL_SENSORS = CANT_ANALOG_SENSORS + CANT_DIGITAL_SENSORS;
+  LED_PIN = 8,    // D8 | Digital 8 | GPIO 14
+  BUTTON_PIN = 9  // D9 | Digital 9 | GPIO 15
+};
 
-const int PINS_ANALOG_SENSORS[CANT_ANALOG_SENSORS] = {PIN_SENSOR_1, PIN_SENSOR_2, PIN_SENSOR_3, PIN_SENSOR_4, PIN_SENSOR_5, PIN_SENSOR_6};
-const int PINS_DIGITAL_SENSORS[CANT_DIGITAL_SENSORS] = {PIN_SENSOR_0, PIN_SENSOR_7};
+// ----------------------- ESTRUCTURAS DE DATOS ------------------------
+struct Motor {
+  uint8_t pwm_pin;
+  uint8_t in1_pin;
+  uint8_t in2_pin;
+  int16_t speed;
+};
 
-int analogSensorValues[CANT_ANALOG_SENSORS];
-int sensorValues[CANT_ALL_SENSORS];
+struct PIDController {
+  double Kp = 90;
+  double Ki = 0.0001;
+  double Kd = 80;
+  double setpoint = 0.0;
+  double integral = 0.0;
+  double prev_error = 0.0;
+};
 
-int motorspeedR;
-int motorspeedL;
+// ------------------------ VARIABLES GLOBALES -------------------------
+Motor left_motor = { MOTOR_L_PWM, MOTOR_L_IN1, MOTOR_L_IN2, 0 };
+Motor right_motor = { MOTOR_R_PWM, MOTOR_R_IN1, MOTOR_R_IN2, 0 };
+PIDController pid;
 
-double Setpoint, Input, Output;
-double KP = 0.45, KI = 0.045, KD = 0.3;
+const int sensor_weights[8] = { 0, 100, 60, 25, 25, 60, 100, 0 };
+uint16_t sensor_values[8] = { 0 };
 
-float setpoint = 0.0; // Línea central
-float error = 0.0;
-float previous_error = 0.0;
-float integral = 0.0;
-float derivative = 0.0;
-float correction = 0.0;
-int left_motor_speed = 0.0;
-int right_motor_speed = 0.0;
+bool system_active = false;
+bool led_state = false;
+uint32_t last_run_time = 0;
+uint32_t last_blink_time = 0;
 
-const unsigned int blinkDelay = 490;
-const unsigned int runDelay = 10;
-bool state = false;
-bool blink = true;
-bool button_state;
+// ------------------------- PROTOTIPOS --------------------------------
+void readSensors();
+double calculateLinePosition();
+double updatePID(double position);
+void setMotorSpeed(Motor &motor, int16_t speed);
+void handleSerialInput();
+void toggleSystemState();
 
-unsigned long blinkTimer;
-unsigned long runTimer;
+// -------------------------- CONFIGURACIÓN ----------------------------
+void setup() {
 
-void setup()
-{
-  // Initialize serial communication
   Serial.begin(9600);
-  Serial.println(" ----------------------------------------------------Start------------------------------------------------------------------ ");
 
-  // Initialize the LED pin as an output
-  pinMode(PIN_LED, OUTPUT);
+  // Inicializar pines
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
-  // Initialize the button pin as an input
-  pinMode(PIN_BUTTON, INPUT_PULLUP);
+  // Configurar pines de motores
+  const uint8_t motor_pins[] = {
+    MOTOR_L_PWM, MOTOR_L_IN1, MOTOR_L_IN2,
+    MOTOR_R_PWM, MOTOR_R_IN1, MOTOR_R_IN2
+  };
 
-  // Initialize 6 analog inputs for sensors
-  for (int i = 0; i < CANT_ANALOG_SENSORS; i++)
-  {
-    pinMode(PINS_ANALOG_SENSORS[i], INPUT);
-  }
-
-  // Initialize 2 digital inputs for sensors
-  for (int i = 0; i < CANT_DIGITAL_SENSORS; i++)
-  {
-    pinMode(PINS_DIGITAL_SENSORS[i], INPUT);
-  }
-
-  // Initialize the 3 outputs for each motor
-  pinMode(PIN_MOTOR_L_PWM, OUTPUT);
-  pinMode(PIN_MOTOR_L_1, OUTPUT);
-  pinMode(PIN_MOTOR_L_2, OUTPUT);
-
-  pinMode(PIN_MOTOR_R_PWM, OUTPUT);
-  pinMode(PIN_MOTOR_R_1, OUTPUT);
-  pinMode(PIN_MOTOR_R_2, OUTPUT);
+  for (uint8_t pin : motor_pins) pinMode(pin, OUTPUT);
 }
 
-void run(unsigned long currentTime)
-{
-  if ((currentTime - runTimer) >= runDelay)
-  {
-    for (int i = 0; i < CANT_ANALOG_SENSORS; i++)
-    {
-      analogSensorValues[i] = analogRead(PINS_ANALOG_SENSORS[i]);
+// --------------------------- BUCLE PRINCIPAL --------------------------
+void loop() {
+  uint32_t current_time = millis();
+  if (DEBUG) {
+    readSensors();
+    double position = calculateLinePosition();
+    double Output = updatePID(position);
+    Serial.print("PID Actualizado: ");
+    Serial.print("Kp=");
+    Serial.print(pid.Kp);
+    Serial.print(" Ki=");
+    Serial.print(pid.Ki);
+    Serial.print(" Kd=");
+    Serial.print(pid.Kd);
+    Serial.print(" ||");
+    Serial.print(" Speed_L=");
+    Serial.print(constrain(BASE_SPEED + Output, MOTOR_MIN_PWM, MOTOR_MAX_PWM));
+    Serial.print(" Speed_R=");
+    Serial.print(constrain(BASE_SPEED - Output + MOTOR_RIGHT_OFFSET, MOTOR_MIN_PWM, MOTOR_MAX_PWM));
+    Serial.print(" ||");
+    Serial.print(" position=");
+    Serial.println(position);
+    delay(500);
 
-      // Invert the reading if the line is white on black, 1 is black line
-      if (LOGIC != 1)
-      {
-        analogSensorValues[i] = 1023 - analogSensorValues[i];
+  } else {
+    /*
+    // Si hay datos desde la PC (por Bluetooth)
+      if (Serial.available()) {
+    String comando = Serial.readStringUntil('\n');
+    comando.trim();
+
+    Serial.print("Recibido: ");
+    Serial.println(comando);
+
+    // Comandos para controlar LED y variable
+    if (comando.startsWith("kp=")) {
+      pid.Kp = comando.substring(3).toDouble();
+      Serial.print("KP cambiado a ");
+      Serial.println(pid.Kp);
+    }
+    else if (comando.startsWith("kd=")) {
+      pid.Kd = comando.substring(3).toDouble();
+      Serial.print("KD cambiada a ");
+      Serial.println(pid.Kd);
+    }
+    else {
+      Serial.println("Comando no reconocido");
+    }
+  }
+  */
+    // Control del sistema
+    if (system_active) {
+      if (current_time - last_run_time >= RUN_INTERVAL) {
+        readSensors();
+        double position = calculateLinePosition();
+        double Output = updatePID(position);
+        // Aplicar velocidades
+        setMotorSpeed(left_motor, BASE_SPEED + Output);
+        setMotorSpeed(right_motor, BASE_SPEED - Output + MOTOR_RIGHT_OFFSET);
+
+        last_run_time = current_time;
+        digitalWrite(LED_PIN, HIGH);
       }
-    }
-
-    sensorValues[0] = !digitalRead(PINS_DIGITAL_SENSORS[0]);
-
-    //----analog to digital conversion
-    for (int i = 0; i < CANT_ANALOG_SENSORS; i++)
-    {
-      sensorValues[i + 1] = analogSensorValues[i] > 512 ? 0 : 1;
-    }
-
-    sensorValues[CANT_ALL_SENSORS - 1] = !digitalRead(PINS_DIGITAL_SENSORS[1]);
-
-    int weights[] = {24, 16, 9, 4, 4, 9, 16, 24};
-
-    int maxLeftDetections = 0;
-    for (int i = 0; i < CANT_ALL_SENSORS / 2; i++)
-    {
-      if (sensorValues[i] == 1 && weights[i] > maxLeftDetections)
-      {
-        maxLeftDetections = weights[i];
+    } else {
+      if (current_time - last_blink_time >= BLINK_INTERVAL) {
+        led_state = !led_state;
+        digitalWrite(LED_PIN, led_state);
+        last_blink_time = current_time;
       }
+      setMotorSpeed(left_motor, 0);
+      setMotorSpeed(right_motor, 0);
     }
-    Serial.print(maxLeftDetections);
-    int maxRightDetections = 0;
-    for (int i = CANT_ALL_SENSORS / 2; i < CANT_ALL_SENSORS; i++)
-    {
-      if (sensorValues[i] == 1 && weights[i] > maxRightDetections)
-      {
-        maxRightDetections = weights[i];
-      }
-    }
-    Serial.print(maxRightDetections);
+  }
 
-    // Calculate the weighted sum of sensor values
-    Input = (maxLeftDetections) - (maxRightDetections);
+  // Entrada serie y botón
+  //handleSerialInput();
+  if (!digitalRead(BUTTON_PIN)) toggleSystemState();
+}
 
-    // Compute PID output
-    float position = Input;                                          // Lee la posición de la línea
-    error = setpoint - position;                                     // Calcula el error
-    integral += error;                                               // Acumula el error para el término integral
-    derivative = error - previous_error;                             // Calcula el cambio en el error
-    correction = (KP * error) + (KI * integral) + (KD * derivative); // Calcula la corrección
-    previous_error = error;                                          // Actualiza el error previo
+// ------------------------- FUNCIONES PRINCIPALES ----------------------
+void readSensors() {
+  // Leer sensores digitales
+  sensor_values[0] = (LINE_LOGIC != digitalRead(SENSOR_D0));
+  sensor_values[7] = (LINE_LOGIC != digitalRead(SENSOR_D7));
 
-    Output = correction;
+  // Leer sensores analógicos
+  const uint8_t analog_pins[] = { SENSOR_A1, SENSOR_A2, SENSOR_A3,
+                                  SENSOR_A4, SENSOR_A5, SENSOR_A6 };
 
-    motorspeedL = constrain(SPEED_BASE + correction, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE);
-    motorspeedR = constrain((SPEED_BASE - correction) - 18, MOTORS_MIN_PWM_VALUE, MOTORS_MAX_PWM_VALUE - 18);
-
-    // Motor izquierdo
-    if (motorspeedL > 0)
-    {
-      digitalWrite(PIN_MOTOR_L_1, HIGH);
-      digitalWrite(PIN_MOTOR_L_2, LOW);
-      analogWrite(PIN_MOTOR_L_PWM, motorspeedL);
-    }
-    else if (motorspeedL < 0)
-    {
-      digitalWrite(PIN_MOTOR_L_1, LOW);
-      digitalWrite(PIN_MOTOR_L_2, HIGH);
-      analogWrite(PIN_MOTOR_L_PWM, -motorspeedL); // multiplica por -1 porque el valor es negativo
-    }
-    else
-    {
-      digitalWrite(PIN_MOTOR_L_1, LOW);
-      digitalWrite(PIN_MOTOR_L_2, LOW);
-      analogWrite(PIN_MOTOR_L_PWM, 0);
-    }
-
-    // Motor derecho
-    if (motorspeedR > 0)
-    {
-      digitalWrite(PIN_MOTOR_R_1, HIGH);
-      digitalWrite(PIN_MOTOR_R_2, LOW);
-      analogWrite(PIN_MOTOR_R_PWM, motorspeedR);
-    }
-    else if (motorspeedR < 0)
-    {
-      digitalWrite(PIN_MOTOR_R_1, LOW);
-      digitalWrite(PIN_MOTOR_R_2, HIGH);
-      analogWrite(PIN_MOTOR_R_PWM, -motorspeedR);
-    }
-    else
-    {
-      digitalWrite(PIN_MOTOR_R_1, LOW);
-      digitalWrite(PIN_MOTOR_R_2, LOW);
-      analogWrite(PIN_MOTOR_R_PWM, 0);
-    }
-
-    Serial.print(" | ");
-
-    // Monitorización por serial
-    Serial.print("SA: ");
-    for (int i = 0; i < CANT_ANALOG_SENSORS; i++)
-    {
-      Serial.print(analogSensorValues[i]);
-      Serial.print(" ");
-    }
-    Serial.print(" | ");
-    for (int i = 0; i < CANT_ALL_SENSORS; i++)
-    {
-      Serial.print(sensorValues[i]);
-      Serial.print(" ");
-    }
-
-    Serial.print(" | Input: ");
-    Serial.print(Input);
-    Serial.print(" | Output: ");
-    Serial.print(Output);
-    Serial.print(" | Motor Speed R: ");
-    Serial.print(motorspeedL);
-    Serial.print(" | Motor Speed L: ");
-    Serial.println(motorspeedR);
-    Serial.print(" | Kp: ");
-    Serial.print(KP, 2);
-    Serial.print(" | Ki: ");
-    Serial.print(KI, 2);
-    Serial.print(" | Kd: ");
-    Serial.print(KD, 2);
-    Serial.print(" | ");
-
-    // Check for serial input
-    if (Serial.available())
-    {
-      String input = Serial.readStringUntil('\n');
-      input.trim();
-
-      // Parse the input and update PID constants
-      if (input.startsWith("Kp"))
-      {
-        KP = input.substring(3).toFloat();
-
-        Serial.print("Kp updated to: ");
-        Serial.println(KP);
-      }
-      else if (input.startsWith("Ki"))
-      {
-        KI = input.substring(3).toFloat();
-
-        Serial.print("Ki updated to: ");
-        Serial.println(KI);
-      }
-      else if (input.startsWith("Kd"))
-      {
-        KD = input.substring(3).toFloat();
-        Serial.print("Kd updated to: ");
-        Serial.println(KD);
-      }
-    }
-
-    delay(1); // Ajusta el retardo según sea necesario
-
-    runTimer = currentTime;
-    digitalWrite(PIN_LED, HIGH);
+  for (uint8_t i = 0; i < 6; i++) {
+    uint16_t value = analogRead(analog_pins[i]);
+    if (LINE_LOGIC) value = 1023 - value;
+    sensor_values[i + 1] = (value > 512) ? 1 : 0;
   }
 }
 
-void stop(unsigned int currentTime)
-{
-  if ((currentTime - blinkTimer) >= blinkDelay)
-  {
-    analogWrite(PIN_MOTOR_L_PWM, 0);
-    analogWrite(PIN_MOTOR_R_PWM, 0);
-    digitalWrite(PIN_LED, blink);
-    blink = !blink;
-    blinkTimer = currentTime;
+  double calculateLinePosition() {
+    int left_max = 0, right_max = 0;
+
+    // Mitad izquierda (sensores 0-3)
+    for (uint8_t i = 0; i < 4; i++) {
+      if (sensor_values[i] && sensor_weights[i] > left_max)
+        left_max = sensor_weights[i];
+    }
+
+    // Mitad derecha (sensores 4-7)
+    for (uint8_t i = 4; i < 8; i++) {
+      if (sensor_values[i] && sensor_weights[i] > right_max)
+        right_max = sensor_weights[i];
+    }
+
+    return left_max - right_max;
+  }
+  
+  /*
+double calculateLinePosition() {
+  double numerator = 0;
+  double denominator = 0;
+  for (int i = 0; i < 8; i++) {
+    numerator += sensor_values[i] * sensor_weights[i];
+    denominator += sensor_values[i];
+  }
+  if (denominator == 0) return 0;
+  return numerator / denominator;
+}
+*/
+double updatePID(double position) {
+  double error = pid.setpoint - position;
+  pid.integral += error;
+  //pid.integral = constrain(pid.integral, -1000, 1000);  // anti wind-up
+
+  double derivative = error - pid.prev_error;
+  pid.prev_error = error;
+  // Cálculo de la corrección PID
+  double correction = (pid.Kp * error) + (pid.Ki * pid.integral) + (pid.Kd * derivative);
+  // Deadband para evitar correcciones muy pequeñas
+  //if (abs(correction) < 500) correction = 0;
+  return correction;
+}
+
+void setMotorSpeed(Motor &motor, int16_t speed) {
+  speed = constrain(speed, MOTOR_MIN_PWM, MOTOR_MAX_PWM);
+
+  if (speed > 0) {
+    digitalWrite(motor.in1_pin, HIGH);
+    digitalWrite(motor.in2_pin, LOW);
+  } else if (speed < 0) {
+    digitalWrite(motor.in1_pin, LOW);
+    digitalWrite(motor.in2_pin, HIGH);
+    speed = -speed;
+  } else {
+    digitalWrite(motor.in1_pin, LOW);
+    digitalWrite(motor.in2_pin, LOW);
+  }
+
+  analogWrite(motor.pwm_pin, speed);
+}
+
+// ------------------------- FUNCIONES AUXILIARES ----------------------
+void toggleSystemState() {
+  static uint32_t last_press = 0;
+  if (millis() - last_press > 250) {  // Debounce de 250ms
+    system_active = !system_active;
+    Serial.print("Estado: ");
+    Serial.println(system_active ? "ACTIVO" : "INACTIVO");
+    last_press = millis();
   }
 }
 
-void loop()
-{
-  unsigned long currentTime = millis();
-  if (state)
-  {
-    run(currentTime);
-  }
-  else
-  {
-    stop(currentTime);
-  }
+void handleSerialInput() {
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
 
-  if (button_state && !digitalRead(PIN_BUTTON))
-  {
-    state = !state;
-    Serial.println(state ? "RUN" : "STOP");
-  }
+    if (input.startsWith("Kp")) pid.Kp = input.substring(2).toFloat();
+    else if (input.startsWith("Ki")) pid.Ki = input.substring(2).toFloat();
+    else if (input.startsWith("Kd")) pid.Kd = input.substring(2).toFloat();
 
-  button_state = digitalRead(PIN_BUTTON);
-  // delay(1);
+    Serial.print("PID Actualizado: ");
+    Serial.print("Kp=");
+    Serial.print(pid.Kp);
+    Serial.print(" Ki=");
+    Serial.print(pid.Ki);
+    Serial.print(" Kd=");
+    Serial.println(pid.Kd);
+  }
 }
