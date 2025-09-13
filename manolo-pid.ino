@@ -12,7 +12,7 @@
 
 // Velocidad base y ajustes
 #define BASE_SPEED 255
-#define RUN_INTERVAL 20     // ms
+#define RUN_INTERVAL 10     // ms
 #define BLINK_INTERVAL 490  // ms
 
 // Pines de hardware
@@ -48,9 +48,9 @@ struct Motor {
 };
 
 struct PIDController {
-  double Kp = 90;
-  double Ki = 0.0001;
-  double Kd = 80;
+  double Kp = 330;
+  double Ki = 0;
+  double Kd = 160;
   double setpoint = 0.0;
   double integral = 0.0;
   double prev_error = 0.0;
@@ -61,7 +61,7 @@ Motor left_motor = { MOTOR_L_PWM, MOTOR_L_IN1, MOTOR_L_IN2, 0 };
 Motor right_motor = { MOTOR_R_PWM, MOTOR_R_IN1, MOTOR_R_IN2, 0 };
 PIDController pid;
 
-const int sensor_weights[8] = { 0, 100, 60, 25, 25, 60, 100, 0 };
+const int sensor_weights[8] = { 0, 3, 2, 1, 1, 2, 3, 0 };
 uint16_t sensor_values[8] = { 0 };
 
 bool system_active = false;
